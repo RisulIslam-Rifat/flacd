@@ -1,0 +1,120 @@
+# =============================================================================
+# FLAC Downloader — Docker image for Hugging Face Spaces (FREE)
+# -----------------------------------------------------------------------------
+# HF Spaces specifics:
+#   - Container runs as user "user" (UID 1000) — NOT root
+#   - Default port is 7860 (not 3000)
+#   - /data is persistent storage (we use it for the Chromium profile)
+#   - Space sleeps after 48h of inactivity but wakes on next request
+#
+# Build:  docker build -f Dockerfile.hf -t flac-downloader-hf .
+# Run:    docker run -p 7860:7860 flac-downloader-hf
+# =============================================================================
+
+FROM node:20-bookworm-slim AS base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ---------------------------------------------------------------------------
+# Stage 1: install OS deps (Python, Xvfb, Playwright OS libs)
+# ---------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-venv \
+        xvfb \
+        libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
+        libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
+        libxfixes3 libxrandr2 libgbm1 libxshmfence1 libasound2 \
+        libpangocairo-1.0-0 libpango-1.0-0 libcairo2 libatspi2.0-0 \
+        libgtk-3-0 \
+        fonts-liberation fonts-noto-color-emoji \
+        ca-certificates curl tini wget \
+        sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user (HF Spaces requirement: UID 1000, name "user")
+RUN useradd -m -u 1000 -s /bin/bash user && \
+    # Make /tmp/.X11-unix world-writable so user can create the Xvfb socket
+    mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix && \
+    # Give user sudo rights to chmod the X11 socket dir if needed
+    echo "user ALL=(ALL) NOPASSWD: /bin/chmod, /bin/mkdir" >> /etc/sudoers
+
+# ---------------------------------------------------------------------------
+# Stage 2: install Bun + Node deps (as root, then chown to user)
+# ---------------------------------------------------------------------------
+FROM base AS node-deps
+
+WORKDIR /app
+
+RUN curl -fsSL https://bun.sh/install | bash && \
+    ln -s /root/.bun/bin/bun /usr/local/bin/bun
+
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+RUN bunx playwright install --with-deps chromium
+
+# ---------------------------------------------------------------------------
+# Stage 3: build Next.js
+# ---------------------------------------------------------------------------
+FROM node-deps AS builder
+
+WORKDIR /app
+
+COPY tsconfig.json next.config.ts next-env.d.ts ./
+COPY postcss.config.mjs tailwind.config.ts components.json eslint.config.mjs ./
+COPY src ./src
+COPY public ./public
+COPY prisma ./prisma
+
+RUN bun run db:generate || true
+RUN bun run build
+
+# ---------------------------------------------------------------------------
+# Stage 4: runtime image
+# ---------------------------------------------------------------------------
+FROM base AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=7860
+ENV HOSTNAME=0.0.0.0
+ENV DISPLAY=:99
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+ENV PATH="/app/.venv/bin:${PATH}"
+
+# Pre-create writable dirs owned by user
+RUN mkdir -p /app/.cache/ms-playwright /app/.venv \
+             /tmp/.X11-unix /tmp/flacdownloader_profile /data \
+    && chown -R user:user /app /tmp/.X11-unix /tmp/flacdownloader_profile /data \
+    && chmod 1777 /tmp/.X11-unix
+
+# Install Python Playwright into a venv
+RUN python3 -m venv /app/.venv && \
+    /app/.venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /app/.venv/bin/pip install --no-cache-dir playwright && \
+    chown -R user:user /app/.venv
+
+# Copy standalone Next.js
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+# Python worker script + startup script
+COPY --from=builder /app/scripts ./scripts
+COPY scripts/render-start.sh /app/render-start.sh
+RUN chmod +x /app/render-start.sh && \
+    sed -i 's/PORT=3000/PORT=7860/' /app/render-start.sh 2>/dev/null || true
+
+# Playwright browser binary
+COPY --from=node-deps /root/.cache/ms-playwright /app/.cache/ms-playwright
+RUN chown -R user:user /app/.cache
+
+# Node binary
+COPY --from=node-deps /usr/local/bin/node /usr/local/bin/node
+
+USER user
+
+EXPOSE 7860
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/app/render-start.sh"]

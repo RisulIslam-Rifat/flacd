@@ -1,0 +1,25 @@
+# Build artifacts
+.next
+node_modules
+.next/cache
+.git
+.gitignore
+
+# Logs
+*.log
+dev.log
+server.log
+
+# Local DB (Prisma SQLite, optional)
+db/*.db
+db/*.db-journal
+
+# Local downloads / temp
+download/
+scripts/__pycache__
+*.pyc
+
+# Mac / IDE
+.DS_Store
+.vscode
+.idea

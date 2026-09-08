@@ -1,0 +1,44 @@
+# Render Blueprint — deploy FLAC Downloader as a Web Service
+# Docs: https://render.com/docs/blueprints
+#
+# Quick start:
+#   1. Push this repo to GitHub
+#   2. Go to https://dashboard.render.com/blueprints/new
+#   3. Select your repo — Render will read this file automatically
+#   4. Click "Apply" — Render will build and deploy the Docker image
+#
+# Required plan: "Starter" ($7/mo) or higher.
+# The free plan is NOT sufficient because:
+#   - 512MB RAM is too small for Chromium
+#   - Web services sleep after 15 min of inactivity (kills Xvfb)
+#   - Free plan times out requests at 30s (FLAC downloads take 30-60s)
+
+services:
+  - type: web
+    name: flac-downloader
+    runtime: docker
+    plan: starter
+    region: oregon  # change to your nearest region (oregon / frankfurt / singapore / ohio)
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeploy: true
+    healthCheckPath: /  # 200 OK on the homepage
+    # Render's free web services sleep after 15 min of inactivity — to keep
+    # Xvfb + the Python worker hot, leave this unset on paid plans.
+    numInstances: 1
+    # FLAC downloads can take up to ~3 minutes; Render allows up to 5 minutes
+    # on paid plans by default. No special config needed.
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: HOSTNAME
+        value: 0.0.0.0
+      - key: DISPLAY
+        value: ":99"
+      # Optional: lock down who can use the app via a shared secret.
+      # If set, the frontend will send this header on /api/* requests.
+      # The current build does not enforce this — but you can add it later.
+      - key: APP_ACCESS_TOKEN
+        sync: false  # means: prompt me for the value in the Render UI

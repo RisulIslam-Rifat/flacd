@@ -1,0 +1,34 @@
+{
+  "name": "FLAC Downloader",
+  "short_name": "FLAC DL",
+  "description": "Search any artist and download their tracks as true lossless FLAC audio. Installable PWA for iOS and Android.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fff7ed",
+  "theme_color": "#f97316",
+  "categories": ["music", "entertainment", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Search",
+      "short_name": "Search",
+      "url": "/",
+      "description": "Open the FLAC Downloader search"
+    }
+  ]
+}

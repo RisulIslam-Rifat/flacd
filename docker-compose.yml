@@ -1,0 +1,25 @@
+# FLAC Downloader — one-container deployment
+#
+#   docker compose up -d --build
+#   → http://localhost:3000
+#
+# The download worker (Python + Playwright + headed Chromium on Xvfb) needs
+# headroom: keep the memory limit at 2 GB or downloads may be OOM-killed.
+services:
+  flac-downloader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: flac-downloader:latest
+    container_name: flac-downloader
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      # Defaults resolve correctly inside the image; override only if you
+      # customize the image layout:
+      # PYTHON_BIN: /app/.venv/bin/python
+      # FLAC_WORKER_SCRIPT: /app/scripts/flac_download_worker.py
+    mem_limit: 2g
